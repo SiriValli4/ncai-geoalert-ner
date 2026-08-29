@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.5
+joblib>=1.3
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+xgboost>=2.0        # optional, only needed if the model was trained with --model xgb
+shap>=0.44           # optional but recommended, enables true per-prediction explanations
