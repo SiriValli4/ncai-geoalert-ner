@@ -152,6 +152,7 @@ app = FastAPI(
                  "Region of India from weather and terrain parameters.",
     version="1.0.0",
     lifespan=lifespan,
+    root_path=""
 )
 
 
