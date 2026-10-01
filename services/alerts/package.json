@@ -1,0 +1,17 @@
+{
+  "name": "geoalert-alerts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multilingual SMS dispatch for HIGH landslide risk districts (Twilio, mock mode without credentials).",
+  "main": "Server.js",
+  "scripts": {
+    "start": "node Server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "twilio": "^6.1.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}
