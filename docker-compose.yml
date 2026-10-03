@@ -1,0 +1,64 @@
+# Local stack: PostGIS + API (+ SMS alerts service).
+#
+#   docker compose up --build -d db
+#   docker compose run --rm api alembic upgrade head
+#   docker compose up --build
+#
+# API docs: http://localhost:8000/docs
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: geoalert
+      POSTGRES_PASSWORD: geoalert
+      POSTGRES_DB: geoalert
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geoalert -d geoalert"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      args:
+        EXTRAS: ${API_EXTRAS:-risk,vision}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://geoalert:geoalert@db:5432/geoalert
+      RISK_MODEL_PATH: /srv/ml/models/landslide_risk_model.joblib
+      HAZARD_MODEL_PATH: /srv/ml/models/hazard_yolov8_demo.pt
+      MEDIA_DIR: /srv/media
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml/models:/srv/ml/models:ro
+      - media:/srv/media
+    depends_on:
+      db:
+        condition: service_healthy
+
+  alerts:
+    image: node:22-alpine
+    working_dir: /srv
+    command: sh -c "npm install --omit=dev && node Server.js"
+    env_file:
+      - path: services/alerts/.env
+        required: false
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./services/alerts:/srv
+      - alerts_node_modules:/srv/node_modules
+
+volumes:
+  pgdata:
+  media:
+  alerts_node_modules:

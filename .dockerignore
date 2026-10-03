@@ -1,0 +1,17 @@
+**/__pycache__
+**/*.pyc
+.venv
+.git
+.env
+.env.*
+!.env.example
+node_modules
+frontend
+services
+legacy
+data
+media
+runs
+ml/models
+tests
+*.md

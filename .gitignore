@@ -1,0 +1,33 @@
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Node -----------------------------------------------------------------
+node_modules/
+npm-debug.log*
+frontend/build/
+
+# --- Secrets / local config -----------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Runtime data ---------------------------------------------------------
+# Uploaded field-report photos (served from MEDIA_DIR in local dev).
+media/
+# YOLO / training run outputs
+runs/
+
+# --- OS / editor ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
