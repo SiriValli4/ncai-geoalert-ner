@@ -22,6 +22,12 @@
  * authoritative administrative boundaries -- replace with real boundary
  * data (e.g. from a GIS/Survey of India source) before using this
  * operationally.
+ *
+ * Live risk: district polygons whose properties carry `prediction_input` are
+ * scored by the FastAPI backend (POST {REACT_APP_API_BASE_URL}/risk/predict,
+ * default http://localhost:8000/api/v1) on mount and every `riskRefreshMs`.
+ * If the backend is unreachable the static risk_level/risk_score are shown and
+ * the header says so. Pass `liveRisk={false}` to use static data only.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -37,6 +43,8 @@ import {
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.heat'
+import useLiveRiskPolygons from './hooks/useLiveRiskPolygons'
+import { riskBandForScore } from './riskBands'
 
 // --------------------------------------------------------------------------
 // Map basics
@@ -58,12 +66,6 @@ const RISK_LEVELS = {
   Low: { stroke: '#4ade80', fill: '#22c55e', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
 }
 
-function riskBandForScore(score) {
-  if (score >= 70) return 'High'
-  if (score >= 40) return 'Medium'
-  return 'Low'
-}
-
 // --------------------------------------------------------------------------
 // Sample data -- replace via props with real feeds. Shapes/coordinates are
 // simplified and illustrative, anchored near real NER district locations.
@@ -81,22 +83,33 @@ function squarePolygon([lat, lng], halfSize = 0.14) {
   ]
 }
 
+// risk_level / risk_score are the offline fallback shown when the risk API is
+// unreachable. `conditions` are SAMPLE weather/terrain inputs sent to
+// POST /risk/predict for each district centre -- replace them with real
+// sensor aggregates (e.g. GET /sensors/nearby) before operational use.
 const DISTRICT_SEEDS = [
-  { district: 'East Sikkim', state: 'Sikkim', center: [27.33, 88.62], risk_level: 'High', risk_score: 88 },
-  { district: 'North Sikkim', state: 'Sikkim', center: [27.51, 88.53], risk_level: 'High', risk_score: 82 },
-  { district: 'East Khasi Hills', state: 'Meghalaya', center: [25.57, 91.88], risk_level: 'High', risk_score: 79 },
-  { district: 'Dima Hasao', state: 'Assam', center: [25.17, 93.02], risk_level: 'Medium', risk_score: 58 },
-  { district: 'West Kameng', state: 'Arunachal Pradesh', center: [27.26, 92.4], risk_level: 'Medium', risk_score: 51 },
-  { district: 'Aizawl', state: 'Mizoram', center: [23.73, 92.72], risk_level: 'Medium', risk_score: 46 },
-  { district: 'Kohima', state: 'Nagaland', center: [25.67, 94.11], risk_level: 'Low', risk_score: 28 },
-  { district: 'Senapati', state: 'Manipur', center: [25.27, 94.02], risk_level: 'Low', risk_score: 22 },
+  { district: 'East Sikkim', state: 'Sikkim', center: [27.33, 88.62], risk_level: 'High', risk_score: 88, conditions: { rainfall_24h_mm: 185, soil_moisture_percent: 82, slope_degree: 38 } },
+  { district: 'North Sikkim', state: 'Sikkim', center: [27.51, 88.53], risk_level: 'High', risk_score: 82, conditions: { rainfall_24h_mm: 160, soil_moisture_percent: 78, slope_degree: 44 } },
+  { district: 'East Khasi Hills', state: 'Meghalaya', center: [25.57, 91.88], risk_level: 'High', risk_score: 79, conditions: { rainfall_24h_mm: 210, soil_moisture_percent: 80, slope_degree: 32 } },
+  { district: 'Dima Hasao', state: 'Assam', center: [25.17, 93.02], risk_level: 'Medium', risk_score: 58, conditions: { rainfall_24h_mm: 95, soil_moisture_percent: 64, slope_degree: 28 } },
+  { district: 'West Kameng', state: 'Arunachal Pradesh', center: [27.26, 92.4], risk_level: 'Medium', risk_score: 51, conditions: { rainfall_24h_mm: 80, soil_moisture_percent: 58, slope_degree: 35 } },
+  { district: 'Aizawl', state: 'Mizoram', center: [23.73, 92.72], risk_level: 'Medium', risk_score: 46, conditions: { rainfall_24h_mm: 70, soil_moisture_percent: 55, slope_degree: 30 } },
+  { district: 'Kohima', state: 'Nagaland', center: [25.67, 94.11], risk_level: 'Low', risk_score: 28, conditions: { rainfall_24h_mm: 35, soil_moisture_percent: 40, slope_degree: 24 } },
+  { district: 'Senapati', state: 'Manipur', center: [25.27, 94.02], risk_level: 'Low', risk_score: 22, conditions: { rainfall_24h_mm: 25, soil_moisture_percent: 35, slope_degree: 20 } },
 ]
 
 export const DEFAULT_RISK_POLYGONS = {
   type: 'FeatureCollection',
   features: DISTRICT_SEEDS.map((d) => ({
     type: 'Feature',
-    properties: { district: d.district, state: d.state, risk_level: d.risk_level, risk_score: d.risk_score },
+    properties: {
+      district: d.district,
+      state: d.state,
+      risk_level: d.risk_level,
+      risk_score: d.risk_score,
+      // Request body for live prediction (see hooks/useLiveRiskPolygons.js).
+      prediction_input: { latitude: d.center[0], longitude: d.center[1], ...d.conditions },
+    },
     geometry: { type: 'Polygon', coordinates: squarePolygon(d.center) },
   })),
 }
@@ -162,6 +175,85 @@ function formatTimeAgo(isoString) {
   if (hrs < 1) return `${Math.max(1, Math.round(hrs * 60))}m ago`
   if (hrs < 24) return `${Math.round(hrs)}h ago`
   return `${Math.round(hrs / 24)}d ago`
+}
+
+// Popups are built as HTML strings for Leaflet; escape anything that came
+// from data or the API.
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+}
+
+function districtPopupHtml(props) {
+  const { district, state, risk_level: riskLevel, risk_score: riskScore, risk_source: source, prediction } = props
+  const sourceLine =
+    source === 'model'
+      ? `AI prediction${prediction?.model_type ? ` &middot; ${escapeHtml(prediction.model_type)}` : ''}`
+      : source === 'sample'
+        ? 'Sample data (risk API unavailable)'
+        : ''
+  const classNote =
+    prediction?.model_severity && prediction.model_severity !== riskLevel
+      ? `<div style="margin-top:4px;font-size:.8em">Model class: <strong>${escapeHtml(prediction.model_severity)}</strong> (score is near a band edge)</div>`
+      : ''
+  const factors = (prediction?.top_factors || [])
+    .map((f) => `<li style="margin:2px 0">${escapeHtml(f.explanation)}</li>`)
+    .join('')
+  // Terrain inputs are stubbed server-side until a real GIS lookup exists;
+  // say so rather than presenting the score as authoritative.
+  const estimated = prediction?.estimated_inputs?.length
+    ? `<div style="margin-top:4px;font-size:.8em;color:#b45309">Estimated inputs: ${prediction.estimated_inputs.map(escapeHtml).join(', ')}</div>`
+    : ''
+
+  return `<div style="font-family:inherit;max-width:260px">
+      <strong>${escapeHtml(district)}</strong><br/>
+      <span style="opacity:.75">${escapeHtml(state)}</span><br/>
+      Risk level: <strong>${escapeHtml(riskLevel)}</strong> (score ${escapeHtml(riskScore)})
+      ${sourceLine ? `<div style="margin-top:4px;font-size:.8em;opacity:.7">${sourceLine}</div>` : ''}
+      ${classNote}
+      ${factors ? `<ul style="margin:6px 0 0;padding-left:16px;font-size:.85em">${factors}</ul>` : ''}
+      ${estimated}
+    </div>`
+}
+
+const CONNECTION_STATUS = {
+  live: { dot: 'bg-emerald-400 animate-pulse', label: 'Live AI risk' },
+  loading: { dot: 'bg-sky-400 animate-pulse', label: 'Connecting to risk API…' },
+  partial: { dot: 'bg-amber-400', label: 'Partial: some districts unavailable' },
+  offline: { dot: 'bg-red-500', label: 'Risk API offline' },
+  disabled: { dot: 'bg-slate-500', label: 'Sample data' },
+}
+
+function formatClock(date) {
+  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function ConnectionStatus({ status, lastUpdated, error, onRefresh }) {
+  const meta = CONNECTION_STATUS[status] || CONNECTION_STATUS.disabled
+  let detail = null
+  if (status === 'offline' || status === 'partial') {
+    detail = lastUpdated ? `showing last update ${formatClock(lastUpdated)}` : 'showing sample data'
+  } else if (status === 'live' && lastUpdated) {
+    detail = `updated ${formatClock(lastUpdated)}`
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-slate-400" title={error || undefined}>
+      <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+      <span>
+        {meta.label}
+        {detail && <span className="text-slate-500"> &middot; {detail}</span>}
+      </span>
+      {status !== 'disabled' && status !== 'loading' && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="ml-1 rounded-md border border-slate-700 px-2 py-0.5 text-slate-300 hover:border-sky-500 hover:text-sky-300"
+        >
+          Refresh
+        </button>
+      )}
+    </div>
+  )
 }
 
 function reportDivIcon(type) {
@@ -372,32 +464,36 @@ export default function LandslideDashboard({
   priorityQueue = DEFAULT_PRIORITY_QUEUE,
   center = NER_CENTER,
   zoom = NER_DEFAULT_ZOOM,
+  // Fetch live predictions for features carrying `properties.prediction_input`.
+  liveRisk = true,
+  riskRefreshMs = 5 * 60_000,
 }) {
   const [showRainfall, setShowRainfall] = useState(false)
   const [showRoads, setShowRoads] = useState(true)
   const [showReports, setShowReports] = useState(true)
   const mapRef = useRef(null)
 
+  const {
+    polygons: displayedRiskPolygons,
+    status: riskStatus,
+    lastUpdated: riskUpdatedAt,
+    error: riskError,
+    refresh: refreshRisk,
+  } = useLiveRiskPolygons(riskPolygons, { enabled: liveRisk, refreshMs: riskRefreshMs })
+
   const stats = useMemo(() => {
-    const highRiskDistricts = riskPolygons.features.filter((f) => f.properties.risk_level === 'High').length
+    const highRiskDistricts = displayedRiskPolygons.features.filter((f) => f.properties.risk_level === 'High').length
     const blockedHighways = roadNetwork.filter((r) => r.status === 'blocked').length
     const activeFieldReports = incidentReports.length
     return { highRiskDistricts, blockedHighways, activeFieldReports }
-  }, [riskPolygons, roadNetwork, incidentReports])
+  }, [displayedRiskPolygons, roadNetwork, incidentReports])
 
   function handleLocate(item) {
     mapRef.current?.flyTo([item.lat, item.lng], 11, { duration: 0.8 })
   }
 
   function onEachDistrictFeature(feature, layer) {
-    const { district, state, risk_level: riskLevel, risk_score: riskScore } = feature.properties
-    layer.bindPopup(
-      `<div style="font-family:inherit">
-         <strong>${district}</strong><br/>
-         <span style="opacity:.75">${state}</span><br/>
-         Risk level: <strong>${riskLevel}</strong> (score ${riskScore})
-       </div>`,
-    )
+    layer.bindPopup(districtPopupHtml(feature.properties))
     layer.on({
       mouseover: (e) => e.target.setStyle({ fillOpacity: 0.55 }),
       mouseout: (e) => e.target.setStyle({ fillOpacity: 0.32 }),
@@ -412,10 +508,12 @@ export default function LandslideDashboard({
           <h1 className="text-lg font-semibold text-slate-50">NER Landslide Early Warning Dashboard</h1>
           <p className="text-xs text-slate-500">North Eastern Region &middot; live situational awareness</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-          Live
-        </div>
+        <ConnectionStatus
+          status={riskStatus}
+          lastUpdated={riskUpdatedAt}
+          error={riskError}
+          onRefresh={refreshRisk}
+        />
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -472,9 +570,11 @@ export default function LandslideDashboard({
             >
               <TileLayer url={DARK_TILE_URL} attribution={DARK_TILE_ATTRIBUTION} />
 
+              {/* react-leaflet's GeoJSON ignores `data` changes after mount, so
+                  the key must change whenever predictions arrive. */}
               <GeoJSON
-                key={riskPolygons.features.length}
-                data={riskPolygons}
+                key={`${displayedRiskPolygons.features.length}-${riskStatus}-${riskUpdatedAt?.getTime() ?? 0}`}
+                data={displayedRiskPolygons}
                 style={riskPolygonStyle}
                 onEachFeature={onEachDistrictFeature}
               />

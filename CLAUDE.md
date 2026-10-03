@@ -38,6 +38,10 @@ mypy app
 
 # Full stack
 docker compose up --build
+
+# Frontend (dashboard fetches live risk from REACT_APP_API_BASE_URL, see frontend/.env.example)
+cd frontend && npm start
+CI=true npx react-scripts test --watchAll=false
 ```
 
 ## Architecture rules
@@ -87,7 +91,7 @@ Dependencies are typed aliases in `app/api/deps.py` (`DbSession`, `RiskModel`, `
 ## Domain constants (keep consistent everywhere)
 
 - Risk score: 0-100. Severity: `Low`/`Medium`/`High` in the DB; `LOW`/`MEDIUM`/`HIGH` in risk-model responses.
-- SMS dispatch threshold: score ≥ 70 is HIGH, ≥ 40 is MEDIUM (`services/alerts/dispatchAlertsRoute.js`).
+- Score bands: ≥ 70 is HIGH, ≥ 40 is MEDIUM. Defined in both `services/alerts/dispatchAlertsRoute.js` (SMS dispatch) and `frontend/src/riskBands.js` (map colours, priority queue); change both together. The dashboard bands live predictions by **score**, not the model's argmax `severity`, so the map agrees with dispatch. The two can differ near a band edge.
 - Hazard types: `road_crack`, `active_mudslide`, `blocked_road` (YOLO classes, plus `normal` = clear) and `rockfall` (human-reported only). The PWA's display labels are mapped in `app/schemas/hazard_report.py::PWA_LABEL_TO_HAZARD_TYPE`.
 - Report status: `pending` → `verified` / `rejected` → `resolved`.
 
