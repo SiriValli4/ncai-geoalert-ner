@@ -10,6 +10,10 @@ from app.repositories.spatial import SRID, make_point
 from app.schemas.risk_zone import RiskZoneCreate
 
 
+class InvalidBoundaryError(ValueError):
+    """The boundary has no polygonal area, even after repair."""
+
+
 async def create_zone(db: AsyncSession, data: RiskZoneCreate) -> RiskZone:
     # ST_Multi promotes a Polygon to MultiPolygon; ST_MakeValid repairs the
     # minor topology issues common in shapefile-derived boundaries.
@@ -21,6 +25,12 @@ async def create_zone(db: AsyncSession, data: RiskZoneCreate) -> RiskZone:
             3,  # keep polygonal parts only
         )
     )
+    # The repair chain never fails on junk input -- a degenerate ring (e.g. two
+    # points) comes out as an EMPTY MultiPolygon, which would otherwise be
+    # stored as an invisible zero-area risk zone. Reject it explicitly.
+    if await db.scalar(select(func.ST_IsEmpty(geom))):
+        raise InvalidBoundaryError("boundary has no polygonal area")
+
     zone = RiskZone(
         zone_name=data.zone_name,
         boundary=geom,

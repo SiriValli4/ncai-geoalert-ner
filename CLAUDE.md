@@ -77,6 +77,8 @@ Dependencies are typed aliases in `app/api/deps.py` (`DbSession`, `RiskModel`, `
 - In `op.*` calls, wrap an already-full constraint name in `op.f(...)`. Otherwise the convention is applied again (`chk_t_chk_t_foo`) and the migration fails on a real database.
 - Check every migration offline before applying it: `alembic upgrade head --sql` and `alembic downgrade <rev>:<rev> --sql`.
 - Never edit a migration that has been applied to a shared database. Add a new one.
+- `alembic/env.py` ignores every database object not on a table we model. The `postgis/postgis` image puts ~100 TIGER/topology tables on the `search_path`, and without this filter autogenerate would try to DROP them. Side effect: deleting a model never autogenerates `DROP TABLE`, so write that migration by hand.
+- `alembic check` must report "No new upgrade operations detected" against a freshly migrated database.
 
 ## ML models
 

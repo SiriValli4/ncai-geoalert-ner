@@ -18,9 +18,16 @@ RUN apt-get update \
 
 FROM base AS deps
 ARG EXTRAS=risk,vision
+# CPU-only PyTorch by default. Plain `pip install ultralytics` on Linux pulls
+# the CUDA build plus several GB of NVIDIA libraries, useless without a GPU.
+# For a GPU host, build with --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 # Install dependencies in their own layer so code changes don't reinstall torch.
 COPY pyproject.toml ./
 RUN mkdir app && touch app/__init__.py \
+    && case ",${EXTRAS}," in \
+         *,vision,*) pip install torch torchvision --index-url "${TORCH_INDEX_URL}" ;; \
+       esac \
     && pip install ".[${EXTRAS}]" \
     && pip uninstall -y geoalert-ner
 

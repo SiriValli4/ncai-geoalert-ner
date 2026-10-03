@@ -21,18 +21,22 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Tables owned by PostGIS / its extensions, never by our migrations.
-_EXTENSION_TABLES = {
-    "spatial_ref_sys",
-    "geography_columns",
-    "geometry_columns",
-    "raster_columns",
-    "raster_overviews",
-}
+
+def _table_name(obj, type_):  # type: ignore[no-untyped-def]
+    if type_ == "table":
+        return obj.name
+    table = getattr(obj, "table", None)
+    return table.name if table is not None else None
 
 
 def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
-    if type_ == "table" and name in _EXTENSION_TABLES:
+    # Only manage objects on tables we model. Anything else that exists in the
+    # DB belongs to an extension: spatial_ref_sys, and -- because the
+    # postgis/postgis image puts the `tiger` and `topology` schemas on the
+    # search_path -- ~100 TIGER geocoder / topology tables that autogenerate
+    # would otherwise try to DROP. Side effect: deleting a model never
+    # autogenerates a DROP TABLE; write that migration by hand.
+    if reflected and _table_name(obj, type_) not in target_metadata.tables:
         return False
     return alembic_helpers.include_object(obj, name, type_, reflected, compare_to)
 

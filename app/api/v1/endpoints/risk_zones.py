@@ -35,8 +35,11 @@ async def create_zone(payload: RiskZoneCreate, db: DbSession) -> RiskZoneRead:
     try:
         zone = await repo.create_zone(db, payload)
         await db.commit()
+    except repo.InvalidBoundaryError as exc:
+        await db.rollback()
+        raise HTTPException(422, "Invalid boundary geometry: it has no polygonal area.") from exc
     except DBAPIError as exc:
-        # Raised by PostGIS for malformed GeoJSON or a boundary with no polygonal area.
+        # Raised by PostGIS for GeoJSON it can't parse at all.
         await db.rollback()
         raise HTTPException(422, "Invalid boundary geometry.") from exc
     return RiskZoneRead.model_validate(zone)
