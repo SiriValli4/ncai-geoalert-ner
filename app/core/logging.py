@@ -25,6 +25,9 @@ def configure_logging(level: str = "INFO") -> None:
                 # uvicorn installs its own handlers; let them propagate to root instead.
                 "uvicorn": {"handlers": [], "propagate": True},
                 "uvicorn.access": {"handlers": [], "propagate": True},
+                # httpx logs every request URL at INFO. OpenWeatherMap only takes the
+                # API key as a query parameter (`appid=`), so INFO would leak it.
+                "httpx": {"level": "WARNING"},
             },
         }
     )

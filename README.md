@@ -202,11 +202,14 @@ All backend settings are environment variables, documented in [`.env.example`](.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://geoalert:geoalert@localhost:5432/geoalert` | Must use the `asyncpg` driver |
-| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated origins allowed to call the API |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated origins allowed to call the API, e.g. your Vercel URL. `*` is accepted only when `ENVIRONMENT=local` |
 | `ENVIRONMENT` | `local` | `local` / `staging` / `production`. `production` disables `/docs` |
 | `RISK_MODEL_PATH` | `ml/models/landslide_risk_model.joblib` | Risk model artifact |
 | `HAZARD_MODEL_PATH` | `ml/models/hazard_yolov8_demo.pt` | YOLOv8 weights |
 | `MAX_UPLOAD_MB` | `15` | Photo upload size limit |
+| `WEATHER_INGESTION_ENABLED` | `false` | Hourly OpenWeatherMap rainfall/humidity/temperature ingestion into `realtime_weather_logs`. Enable on **one** process only |
+| `OPENWEATHER_API_KEY` | *(unset)* | OpenWeatherMap key. Without it ingestion logs a warning and stays off |
+| `WEATHER_TARGETS` | `[]` | JSON list of `{name, latitude, longitude}` points to ingest |
 | `REACT_APP_API_BASE_URL` | `http://localhost:8000/api/v1` | Frontend: API location (set at build time) |
 
 ---

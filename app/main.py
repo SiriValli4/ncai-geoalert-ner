@@ -22,6 +22,7 @@ from app.core.logging import configure_logging
 from app.db.session import engine
 from app.services.hazard_detector import HazardDetectorService
 from app.services.risk_model import RiskModelService
+from app.services.weather_ingestion import WeatherIngestionService
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.hazard_detector = HazardDetectorService(max_dim=settings.HAZARD_MAX_DIM)
     app.state.hazard_detector.try_load(settings.HAZARD_MODEL_PATH)
 
+    # Off unless configured; misconfiguration is logged, never fatal.
+    app.state.weather_ingestion = WeatherIngestionService(settings)
+    app.state.weather_ingestion.start()
+
     yield
 
+    # Stop the scheduler first so no job is mid-query when the engine closes.
+    await app.state.weather_ingestion.shutdown()
     await engine.dispose()
 
 
@@ -55,10 +62,14 @@ def create_app() -> FastAPI:
         redoc_url=None if settings.is_production else "/redoc",
     )
 
+    # With "*", Starlette + allow_credentials=True reflects *any* Origin back with
+    # Access-Control-Allow-Credentials, so every website could make credentialed
+    # calls. Credentials are only enabled for an explicit origin list. Config
+    # rejects "*" outside ENVIRONMENT=local.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
+        allow_origins=["*"] if settings.cors_allow_all else settings.CORS_ORIGINS,
+        allow_credentials=not settings.cors_allow_all,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -71,3 +71,24 @@ def test_check_constraint_names_follow_convention() -> None:
     names = {c.name for c in HazardReport.__table__.constraints if c.name}
     assert "chk_hazard_reports_hazard_type" in names
     assert "chk_hazard_reports_status" in names
+
+
+def test_realtime_weather_log_location_is_generated_not_written() -> None:
+    """`location` is a STORED generated column; Postgres rejects any INSERT
+    that supplies it, so the ORM must leave it out."""
+    from sqlalchemy import insert
+
+    from app.models import RealtimeWeatherLog
+
+    stmt = insert(RealtimeWeatherLog).values(
+        location_name="Shillong",
+        latitude=25.5788,
+        longitude=91.8933,
+        rainfall_mm=12.4,
+        humidity=88,
+        temperature=19.5,
+    )
+    sql = _sql(stmt)
+    assert "latitude" in sql and "longitude" in sql
+    assert "location," not in sql and "location)" not in sql
+    assert RealtimeWeatherLog.__table__.c.location.computed is not None

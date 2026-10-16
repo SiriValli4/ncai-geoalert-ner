@@ -3,9 +3,11 @@
 from app.models.hazard_report import HazardReport, HazardType, ReportStatus
 from app.models.risk_zone import RiskZone, SeverityLevel
 from app.models.sensor import SensorReading
+from app.models.weather import RealtimeWeatherLog
 
 __all__ = [
     "HazardReport",
+    "RealtimeWeatherLog",
     "HazardType",
     "ReportStatus",
     "RiskZone",
